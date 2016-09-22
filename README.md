@@ -6,3 +6,5 @@ Simulation of droplet driven motion by random movements on surface pattern by st
 
 Initial file: *.fe
 Needs Surface Evolver environment: http://facstaff.susqu.edu/brakke/evolver/evolver.html
+
+![alt tag](https://github.com/Gatar/RandomMotionDroplet/blob/master/droplet.png)
