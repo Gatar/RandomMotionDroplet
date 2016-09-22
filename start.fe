@@ -1,0 +1,354 @@
+gravity_constant 0
+
+
+//-----------------------PULPIT STEROWANIA-----------------------------
+	PARAMETER tryb_symulacji = 2	// 1 - symulacja klasterowa, 2 - indywiduane losowe przesuniêcia 
+	
+	PARAMETER volumen = 1000		// objêtoœæ
+	PARAMETER gamma = 1				// napiêcie powierzchniowe
+	
+	PARAMETER theta = 90            // theta
+	PARAMETER Dtheta = 30           // amplituda kata theta
+	
+	PARAMETER RP = 0.05					// wspóczynnik ograniczenia przesuniêcia losowego   
+    PARAMETER RPI = 0.1					// maksymalne rpzesuniêcie punktu podczas minimalizacji energii SE
+	PARAMETER klas = 0.2					// miara wartoœci przesuniêcia po³owki kropli  //0.15
+	PARAMETER ilosc_trojkatow = 3		// ilosc podzialow krawedzi kropli -> re  //2
+	
+	PARAMETER ilosc_symulacji = 2		// ilosc pe³nych cykli symulacji
+	PARAMETER ilosc_krokow = 50		// ilosc kroków (iteracji) w pojedynczej symulacji  //100
+	
+	PARAMETER zapis = 3					// 1 - zapis koñcowy uœrednionych wyników z wszystkich symulacji
+										// 2 - zapis do osobnego pliku wyników ka¿dej symulacji
+										// 3 - oba w/w zapisy s¹ realizowane
+//---------------------------------------------------------------------
+
+PARAMETER wzorA = 100					// parametr A wzoru
+PARAMETER wzorB = 20					// parametr B wzoru
+
+PARAMETER theta1 = theta*pi/180           // 1,57
+PARAMETER Dtheta1 = Dtheta*pi/180   	  // 1,05
+
+PARAMETER XY = (((3*volumen)^(1/3))/2)
+PARAMETER AAx = volumen^(1/3)*4			// d³ugoœæ podstawy na osi x
+PARAMETER AAy = volumen^(1/3)*1.5			// d³ugoœæ podstawy na osi y
+
+define tablica_chwilowa real[5][25000]
+
+parameter srednie_theta_1=0
+parameter srednie_theta_2=0
+
+#define T -cos((sin(abs(x+wzorB)^(1/2)*wzorA))/abs(sin(abs(x+wzorB)^(1/2)*wzorA))*Dtheta1+theta1)
+
+
+constraint 1
+formula: x3 = 0
+energy:  // for contact angle
+e1: -T*y
+e2: 0
+e3: 0
+
+
+vertices
+1   -XY  -XY 0.0  constraint 1  /* 4 vertices on plane */
+2    XY  -XY 0.0  constraint 1
+3    XY   XY 0.0  constraint 1
+4   -XY   XY 0.0  constraint 1
+5   0.0  0.0 2*XY 
+6   AAx  AAy 0.0  fixed   /* for table top */
+7  AAx -AAy 0.0  fixed
+8 -AAx -AAy 0.0  fixed
+9 -AAx  AAy 0.0  fixed 
+
+edges  /* given by endpoints and attribute */
+1   1 2    constraint 1 /* 4 edges on plane */
+2   2 3    constraint 1
+3   3 4    constraint 1
+4   4 1    constraint 1
+5   1 5
+6   2 5  
+7   3 5 
+8   4 5
+9  6 7   fixed no_refine color red /* for table top */
+10 7 8   fixed no_refine
+11 8 9   fixed no_refine
+12 9 6  fixed no_refine
+
+faces  /* given by oriented edge loop */
+1   1 6 -5 tension gamma
+2   2 7 -6 tension gamma
+3   3 8 -7 tension gamma
+4   4 5 -8 tension gamma
+//5  13 14 15  16  density 0 fixed no_refine /* table top for display */
+
+bodies  /* one body, defined by its oriented faces */
+1   1 2 3 4   volume volumen density 1
+
+read
+s
+q
+ilosc_random := 0;
+suma_random := 0;
+
+
+//zdefiniowanie tablicy wyników oraz licznika udanych symulacji
+define tablica real[5][25000];
+tablica.no_dump on;
+
+rzeczywista_ilosc_symulacji := 0;
+rzeczywista_ilosc_symulacji.no_dump on;
+
+define test_serii integer[2][15];
+test_serii.no_dump on;
+
+// genereator liczb pseudolosowych
+cc1:=cpu_counter-(floor(cpu_counter/100000000)*100000000);	
+random_seed:=cc1; 
+
+//deklaracja optimization
+numer_kroku:=0;
+m RPI;
+
+//ustawianie licznika symulacji w pliku licznik.txt
+licznik_plik := "licznik.txt"
+if rzeczywista_ilosc_symulacji = 0 then printf "file_counter:=1;\n" >> licznik_plik;
+read "licznik.txt"
+nazwa_pliku := sprintf "symulacja-%g.txt",file_counter;
+
+meanX:=0;
+remember_random := random;
+read "random.cm_"
+d_srednie := 0;
+
+//definiowanie parametrów do zliczania serii
+Nowa_Energia := 0;
+Stara_Energia := 0;
+inc:=0; dec:=0;
+define increase1 integer[20];
+define decrease1 integer[20];
+
+re := {refine edges where on_constraint 1 };
+
+init:={u 2;V 2;g 5; V 2;};
+cykl:={init 20;	V 6; u 6;};
+
+run2:= {			
+	   
+       //liczy œrednie po³o¿enie kropli
+	   meanX:=0;
+	   meanX_licz:=0;
+	   foreach vertex punkt where on_constraint 1 do {
+            meanX := meanX + punkt.x1; 
+			meanX_licz++;
+			};
+		meanX := meanX/meanX_licz;    
+		
+		//liczy œrednie po³o¿enie kropli
+	   meanY:=0;
+	   meanY_licz:=0;
+	   foreach vertex punkt where on_constraint 1 do {
+            meanY := meanY + punkt.x2; 
+			meanY_licz++;
+			};
+		meanY := meanY/meanY_licz;
+           
+		
+		//obl d œredniego
+		if numer_kroku = 0 then {
+			dd := 0;
+			foreach vertex vvT where on_constraint 1 do {
+				dd++;
+				d_srednie := d_srednie + sqrt((vvT.x1-meanX)^2+(vvT.x2-meanY)^2);
+			};
+			d_srednie := d_srednie / dd;
+		};
+
+		//algorytm usuwaj¹cy "warkocze"
+		wielkosc_poprawki := 0.5;
+		czulosc_poprawki := 2;
+		foreach vertex vvT where on_constraint 1 do {
+				dd := 0;
+				dd := sqrt((vvT.x1-meanX)^2+(vvT.x2-meanY)^2);
+				
+				przerwij := 0;
+				while (dd-d_srednie > czulosc_poprawki) do {
+					if (vvT.x1-meanX) > 0 then Zx := -1 else Zx := 1;
+					if (vvT.x2-meanY) > 0 then Zy := -1 else Zy := 1;
+					aa := (vvT.x2-meanY)/(vvT.x1-meanX);
+					bbb := vvT.x2 - (aa*vvT.x1);
+					if abs(aa) < 1 then {
+						vvT.x1 := vvT.x1 + (0.1*Zx);
+						vvT.x2 := vvT.x1 * aa + bbb;
+					}
+					else
+					{
+						vvT.x2 := vvT.x2 + (0.1*Zx);
+						vvT.x1 := (vvT.x2 - bbb)/aa;
+					};
+					dd := sqrt((vvT.x1-meanX)^2+(vvT.x2-meanY)^2);
+					przerwij++;
+					if przerwij = 20 then {
+					dissolve vvT;
+					break;
+					};
+				};
+				
+				przerwij := 0;
+				while (dd-d_srednie < -czulosc_poprawki) do {
+					if (vvT.x1-meanX) > 0 then Zx := 1 else Zx := -1;
+					if (vvT.x2-meanY) > 0 then Zy := 1 else Zy := -1;
+					aa := (vvT.x2-meanY)/(vvT.x1-meanX);
+					bbb := vvT.x2 - (aa*vvT.x1);
+					if abs(aa) < 1 then {
+						vvT.x1 := vvT.x1 + (0.1*Zx);
+						vvT.x2 := vvT.x1 * aa + bbb;
+					}
+					else
+					{
+						vvT.x2 := vvT.x2 + (0.1*Zx);
+						vvT.x1 := (vvT.x2 - bbb)/aa;
+					};
+					dd := sqrt((vvT.x1-meanX)^2+(vvT.x2-meanY)^2);
+					przerwij++;
+					if przerwij = 20 then {
+					dissolve vvT;
+					break;
+					};
+				};
+			};
+		
+	//cykl symulacji Surface Evolver	
+	if tryb_symulacji = 1 then{
+		klaster;
+		cykl 2;
+		printf "%f  %f %f %f \n", numer_kroku, meanX, ilosc_random, suma_random;
+	}else{
+		jiggle1;
+		cykl 2;
+		printf "%f  %f \n", numer_kroku, meanX;
+	}; 
+		
+
+			
+	numer_kroku:=numer_kroku+1;
+	pressure1:=body[1].pressure;
+	 
+	   // obliczenie polozenia kropli i indeksów skrajnych punktów na osi x
+		sumaPolozeniaX := 0;
+		ilosc_punktow:=0;
+		foreach vertex punkt where on_constraint 1 do {
+            sumaPolozeniaX := sumaPolozeniaX + punkt.x;
+			ilosc_punktow++;
+			};   
+		meanX:=sumaPolozeniaX/ilosc_punktow; 
+	   
+		//obliczenie izotropowosci
+		maxY:=-1000;
+		maxX:=-1000;
+		minY:= 1000;
+		minX:= 1000;
+		foreach vertex punkt where on_constraint 1 do {
+            if punkt.y>maxY then maxY:=punkt.y;   
+            if punkt.y<minY then minY:=punkt.y;  
+			if punkt.x>maxX then maxX:=punkt.x;
+			if punkt.x<minX then minX:=punkt.x;
+			};
+		izotropowosc:=(maxX-minX)/(maxY-minY);   
+		
+		// liczy d³ugoœæ serii
+		Nowa_Energia := total_energy;
+		if Nowa_Energia > Stara_Energia then {inc++; increase1[inc]++;} else inc:=0;
+		if Nowa_Energia < Stara_Energia then {dec++; decrease1[dec]++;} else dec:=0;
+		Stara_Energia := Nowa_Energia;
+		
+		//Zapis do pliku: Krok | Energia | Œrednie po³o¿enie x | Œrednie po³o¿enie y | Ilosc randomow | WArtosc srednia randomow
+	   if zapis = 2 OR zapis = 3 then {printf "%g  %f  %f  %f  %f  %f\n", numer_kroku,total_energy,meanX,meanY,ilosc_random, suma_random >> nazwa_pliku};
+		
+		// zapis chwilowej tablicy
+		tablica_chwilowa[1][numer_kroku] := numer_kroku;
+		tablica_chwilowa[2][numer_kroku] := total_energy;
+		tablica_chwilowa[3][numer_kroku] := meanX;
+		tablica_chwilowa[4][numer_kroku] := meanY;
+		tablica_chwilowa[5][numer_kroku] := suma_random;
+};
+
+	
+while(file_counter < ilosc_symulacji+1) do {
+replace_load datafilename;
+	
+	//pakiet inicjuj¹cy - genereator liczb pseudolosowych
+ 	cc1:=cpu_counter-(floor(cpu_counter/100000000)*100000000); 
+	random_seed:=cc1;
+	
+	//pocz¹tkowa symulacja inicjuj¹ca
+	r;
+	init 100;
+	r;
+	numer_kroku:=0;
+	re ilosc_trojkatow;
+	optimize off;
+	check_increase off;
+	
+	
+	//pakiet symulacji
+	quiet;
+    m RP;
+	run2 ilosc_krokow;
+	
+	//sumowanie tablicy wyników
+	if numer_kroku = ilosc_krokow then
+	{
+		for (inx:=1; inx < 1+ilosc_krokow; inx++){
+			tablica[1][inx] := tablica[1][inx] + tablica_chwilowa[1][inx];
+			tablica[2][inx] := tablica[2][inx] + tablica_chwilowa[2][inx];
+			tablica[3][inx] := tablica[3][inx] + tablica_chwilowa[3][inx];
+			tablica[4][inx] := tablica[4][inx] + tablica_chwilowa[4][inx];
+			tablica[5][inx] := tablica[5][inx] + tablica_chwilowa[5][inx];
+		};
+		rzeczywista_ilosc_symulacji := rzeczywista_ilosc_symulacji + 1;
+	};
+	
+	//nadanie nazwy nowemu plikowi z wynikami pojedynczej serii symulacji
+	file_counter++;
+	printf "file_counter := %d;\n", file_counter >> licznik_plik;
+    nazwa_pliku := sprintf "symulacja-%d.txt",file_counter;
+	nazwa_pliku_test := sprintf "test_serii-%d.txt",file_counter-1;
+	
+	//zapisanie wyników serii dla pojedynczej symulacji
+	if zapis = 2 OR zapis = 3 then {
+		printf "Licz Wzrosty  Spadki\n-----------------\n" >>> nazwa_pliku_test;
+		for (ii:=2; ii < 12; ii++){
+			printf "%g %g %g \n",ii,increase1[ii],decrease1[ii] >> nazwa_pliku_test;
+		};
+	};
+	//sumowanie tablicy z wynikami testu d³ugoœci serii
+	for (inx:=1; inx < 16; inx++){
+			test_serii[1][inx] := test_serii[1][inx] + increase1[inx];
+			test_serii[2][inx] := test_serii[2][inx] + decrease1[inx];
+		};
+};
+
+//zliczanie trojkatow na krawedzi
+licznik_edges := 0;
+foreach edge edg where on_constraint 1 do licznik_edges++;
+
+// zapis zsumowanych i uœrednionych wyników
+if zapis = 1 OR zapis = 3 then 
+{
+	nazwa_pliku := "suma_wynikow.txt";
+	printf "Theta: %g \n dTheta: %g \n Volume: %g \n Ilosc krokow: %g \n Ilosc symulacji: %g \n Wielkosc przesuniecia: %g \n Ilosc trójk¹tów na krawêdzi: %g \n Ilosc podzialow: %g \n",theta,Dtheta,volumen,ilosc_krokow,rzeczywista_ilosc_symulacji,klas,licznik_edges,ilosc_trojkatow >>> nazwa_pliku;
+	for (inx:=1; inx < 1+ilosc_krokow; inx++){
+				tablica[1][inx] := tablica[1][inx] / rzeczywista_ilosc_symulacji;
+				tablica[2][inx] := tablica[2][inx] / rzeczywista_ilosc_symulacji;
+				tablica[3][inx] := tablica[3][inx] / rzeczywista_ilosc_symulacji;
+				tablica[4][inx] := tablica[4][inx] / rzeczywista_ilosc_symulacji;
+				tablica[5][inx] := tablica[5][inx] / rzeczywista_ilosc_symulacji;
+				printf "%f  %f  %f  %f  %f \n", tablica[1][inx],tablica[2][inx],tablica[3][inx],tablica[4][inx],tablica[5][inx] >> nazwa_pliku;
+			};
+	// zapis zsumowanych wyników testu d³ugoœci serii
+	nazwa_pliku := "test_serii.txt";
+	printf "Licz Wzrosty  Spadki\n-----------------\n" >>> nazwa_pliku;
+		for (ii:=2; ii < 12; ii++){
+		printf "%g %g %g \n",ii,test_serii[1][ii],test_serii[2][ii] >> nazwa_pliku;
+		};
+}

@@ -1,0 +1,64 @@
+
+procedure new_coord()
+     {
+          xw:=RP*(random-0.5);
+          return;          
+     } 
+     
+jiggle1:=
+{
+	foreach vertex vvT where not fixed do 
+	{
+		new_coord();
+		vvT.x:=vvT.x+xw; 
+	};
+};
+
+function real RP1()
+{return klas*(random-0.5)};
+
+klaster1 :=
+{
+if (random-0.5) > 0 then 
+{
+remember_random := random;
+	foreach vertex vvT where not fixed AND vvT.x1 < meanX do
+		{
+		if (remember_random-0.5) > 0 then vvT.x1 := vvT.x1 + klas+RP1() else  vvT.x1 := vvT.x1 - klas+RP1();
+		}
+}
+else 
+{
+remember_random := random;
+	foreach vertex vvT where not fixed AND vvT.x1 > meanX do
+		{
+		if (remember_random-0.5) > 0 then vvT.x1 := vvT.x1 + klas+RP1() else  vvT.x1 := vvT.x1 - klas+RP1();
+		}
+}
+};  
+
+klaster :=
+{
+if (random-0.5) > 0 then 
+{
+
+	foreach vertex vvT where not fixed AND vvT.x1 < meanX do
+		{
+		chwilowy := klas+RP1();
+		suma_random := suma_random - chwilowy;
+		ilosc_random++;
+		vvT.x1 := vvT.x1 - klas;
+		}
+}
+else 
+{
+remember_random := random;
+	foreach vertex vvT where not fixed AND vvT.x1 > meanX do
+		{
+		chwilowy := klas+RP1();
+		suma_random := suma_random + chwilowy;
+		ilosc_random++;
+		vvT.x1 := vvT.x1 + klas;
+		}
+}
+};   
